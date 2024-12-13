@@ -548,6 +548,22 @@
   }
 }
 
+.sql-result-table {
+  overflow-x: auto;
+
+  &::-webkit-scrollbar {
+    height: 8px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: #1e1e1e;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background-color: #2d3032;
+    border-radius: 4px;
+  }
+  }
 .recommendations-container {
   height: 100%;
   overflow-y: scroll;
@@ -573,8 +589,26 @@
 //   padding: 20px;
 // }
 
+*{
+  &::-webkit-scrollbar {
+    display:none;
+  }
+  
+  &::-webkit-scrollbar-track {
+    display:none;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    display:none;
+  }
+  }
+
 .right-panel {
   height: 100%;
+
+  .sql-result-table{
+    padding-bottom: 100px;
+  }
   .sql-results-section {
     background: #1d2021;
     border-radius: 8px;

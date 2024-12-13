@@ -467,6 +467,8 @@ export function ConsolePage() {
     startTimeRef.current = new Date().toISOString();
     setIsConnected(true);
     setRealtimeEvents([]);
+    setSqlResults([]);
+    setCurrentQuery('');
     setItems(client.conversation.getItems());
     setHealthData(null); // Add this line to reset health data
 
