@@ -34,6 +34,7 @@ import { TypewriterText } from '../components/typewriter/TypewriterText';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import * as showdown from 'showdown';
+import { SQLResultTable } from '../components/SQLResultTable';
 
 // Al inicio del componente ConsolePage
 const markdownConverter = new showdown.Converter({
@@ -407,6 +408,9 @@ export function ConsolePage() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  const [sqlResults, setSqlResults] = useState<any[]>([]);
+  const [currentQuery, setCurrentQuery] = useState<string>('');
+
   useEffect(() => {
     // Load and parse CSV file
     fetch('/data/igs_data.csv')
@@ -415,6 +419,7 @@ export function ConsolePage() {
       .then(() => setCsvLoaded(true))
       .catch(error => console.error('Error loading CSV:', error));
   }, []);
+  
 
   /**
    * Utility for formatting the timing of logs
@@ -686,6 +691,25 @@ export function ConsolePage() {
     // Set transcription, otherwise we don't get user transcriptions back
     client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
 
+    client.addTool(
+      {
+        name: 'execute_sql',
+        description: 'Executes a SQL query and returns the results',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'The SQL query to execute',
+            },
+          },
+          required: ['query'],
+        },
+      },
+      async ({ query }: {query: string}) => {
+        return 'procesando peticion...'
+      }
+    );
     client.addTool(
       {
         name: 'get_health_data',
@@ -1035,10 +1059,23 @@ Importante:
 
     // handle realtime events from client + server for event logging
     client.on('realtime.event', (realtimeEvent: RealtimeEvent) => {
+      if (realtimeEvent.event.type === 'execute_sql') {
+        try {
+          const result = JSON.parse(realtimeEvent.event.content);
+          if (result.success && result.data) {
+            setSqlResults(result.data);
+          } else {
+            setSqlResults([]);
+          }
+        } catch (error) {
+          console.error('Error parsing SQL results:', error);
+          setSqlResults([]);
+        }
+      }
+      
       setRealtimeEvents((realtimeEvents) => {
         const lastEvent = realtimeEvents[realtimeEvents.length - 1];
         if (lastEvent?.event.type === realtimeEvent.event.type) {
-          // if we receive multiple events in a row, aggregate them for display purposes
           lastEvent.count = (lastEvent.count || 0) + 1;
           return realtimeEvents.slice(0, -1).concat(lastEvent);
         } else {
@@ -1081,6 +1118,32 @@ Importante:
     console.log('memoryKv actualizado:', memoryKv);
   }, [memoryKv]);
 
+  useEffect(() => {
+    const client = clientRef.current;
+
+    if (client) {
+      // Escuchar eventos del servidor
+      client.realtime.on('server.*', (event: any) => {
+        // console.log('Received server event:', event);
+        
+        if (event.type === 'server.sql_result') {
+          console.log('SQL Results:', event.data);
+          if (event.data?.success && event.data?.results) {
+            setSqlResults(event.data.results);
+            setCurrentQuery(event.data.query);
+          }
+        }
+      });
+    }
+
+    // Cleanup function
+    return () => {
+      if (client) {
+        client.realtime.off('server.*');
+      }
+    };
+  }, []);
+
   /**
    * Render the application
    */
@@ -1090,7 +1153,7 @@ Importante:
         <div className="content-title">
           <img src="/icon-aitaly.svg" />
           <span>Asistente de salud</span>
-        </div>
+          </div>
         <div className="content-api-key">
           {!LOCAL_RELAY_SERVER_URL && (
             <Button
@@ -1101,8 +1164,8 @@ Importante:
               onClick={() => resetAPIKey()}
             />
           )}
-        </div>
-      </div>
+            </div>
+            </div>
       <div className="content-main">
         <div className="content-logs">
           <div className="content-block events">
@@ -1162,16 +1225,16 @@ Importante:
                               ? 'error!'
                               : realtimeEvent.source}
                           </span>
-                        </div>
+            </div>
                         <div className="event-type">
                           {event.type}
                           {count && ` (${count})`}
-                        </div>
-                      </div>
+          </div>
+        </div>
                       {!!expandedEvents[event.event_id] && (
                         <div className="event-payload">
                           {JSON.stringify(event, null, 2)}
-                        </div>
+            </div>
                       )}
                     </div>
                   </div>
@@ -1199,8 +1262,8 @@ Importante:
                         }
                       >
                         <X />
-                      </div>
-                    </div>
+                            </div>
+                          </div>
                     <div className={`speaker-content`}>
                       {/* tool response */}
                       {conversationItem.type === 'function_call_output' && (
@@ -1211,7 +1274,7 @@ Importante:
                         <div>
                           {conversationItem.formatted.tool.name}(
                           {conversationItem.formatted.tool.arguments})
-                        </div>
+                            </div>
                       )}
                       {!conversationItem.formatted.tool &&
                         conversationItem.role === 'user' && (
@@ -1229,7 +1292,7 @@ Importante:
                             {conversationItem.formatted.transcript ||
                               conversationItem.formatted.text ||
                               '(truncated)'}
-                          </div>
+                      </div>
                         )}
                       {conversationItem.formatted.file && (
                         <audio
@@ -1238,11 +1301,11 @@ Importante:
                         />
                       )}
                     </div>
-                  </div>
+                </div>
                 );
               })}
+              </div>
             </div>
-          </div>
           <div className="content-actions">
             <form onSubmit={handleTextSubmit} className="text-input-form">
               <input
@@ -1279,19 +1342,24 @@ Importante:
               }
             />
           </div>
-        </div>
+            </div>
         <div className="content-right">
           <div className={`content-block map ${hasRecommendations ? 'recommendations-active' : ''}`}>
             <div className="content-block-title bottom">
-              {healthData?.current.patientName || 'Información de salud'}
+              {currentQuery || 'Consulta SQL'}
             </div>
-            <div className="content-block-body full" style={{ overflow: 'hidden' }}>
-              <div className="chart-wrapper">
-                <div className="chart-content">
-                  <HealthRadarChart data={healthData} />
-                </div>
+            <div className="right-panel">
+              <div className="sql-results-section">
+                {sqlResults && sqlResults.length > 0 ? (
+                  <SQLResultTable data={sqlResults} />
+                ) : (
+                  <div className="no-results">
+                    No hay resultados SQL para mostrar
+                  </div>
+                )}
               </div>
             </div>
+            
           </div>
           <div className={`content-block kv ${hasRecommendations ? 'recommendations-active' : ''}`}>
             <div 
@@ -1301,13 +1369,13 @@ Importante:
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M6 9l6 6 6-6"/>
               </svg>
-            </div>
+                          </div>
             <div className="content-block-body content-kv">
               <div className="recommendations-container" ref={scrollContainerRef}>
                 {isGeneratingRecommendations ? (
                   <div className="generating-text">
                     Generando recomendaciones personalizadas<span className="dots">...</span>
-                  </div>
+                          </div>
                 ) : (
                   <>
                     <div className="recommendations-text">
@@ -1326,20 +1394,20 @@ Importante:
                           memoryKv.onTypewriterComplete?.();
                         }}
                       />
-                    </div>
+                        </div>
                     {memoryKv.healthLinks && (
                       <div className="recommendations-links">
                         <HealthLinks links={memoryKv.healthLinks} />
-                      </div>
+                          </div>
                     )}
                   </>
                 )}
+                        </div>
+                      </div>
+                    </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1408,7 +1476,7 @@ const exportHealthReport = async (
           <img src="/icon-aitaly.svg" alt="Logo" width="60" />
           <h1>Informe de Salud</h1>
           <p class="date">${new Date().toLocaleDateString('es-ES')}</p>
-        </div>
+          </div>
         
         <div class="patient-info">
           <h2>Paciente: ${patientName}</h2>
@@ -1425,8 +1493,8 @@ const exportHealthReport = async (
               <li><strong>IGS Actual: ${healthData.current.igs.toFixed(1)}</strong></li>
               <li><strong>IGS Proyectado: ${healthData.future.igs.toFixed(1)}</strong></li>
             </ul>
-          </div>
         </div>
+              </div>
         <div class="recommendations">
           <h3>Recomendaciones Personalizadas</h3>
           ${recommendationsHtml}

@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { RealtimeClient } from '@openai/realtime-api-beta';
+import { executeQuery } from '../utils/database.js';
 
 export class RealtimeRelay {
   constructor(apiKey) {
@@ -138,6 +139,39 @@ export class RealtimeRelay {
         return "Datos de memoria guardados correctamente"
       }
     );
+    client.addTool(
+      {
+        name: 'execute_sql',
+        description: 'Executes a SQL query and returns the results',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'The SQL query to execute',
+            },
+          },
+          required: ['query'],
+        },
+      },
+      async ({ query }) => {
+        const result = executeQuery(query);
+        ws.send(JSON.stringify({ type: 'hello', data: 'test' }));
+        this.log('runing query...')
+        // Enviamos el evento al cliente usando ws.send
+        ws.send(JSON.stringify({
+          type: 'server.sql_result', // Match the 'server.*' pattern
+          data: {
+            success: result.success,
+            results: result.data,
+            message: result.message,
+            query: query
+          }
+        }));
+
+        return JSON.stringify(result);
+      }
+    );
     client.realtime.on('close', () => ws.close());
 
     // Relay: Browser Event -> OpenAI Realtime API Event
@@ -178,6 +212,22 @@ export class RealtimeRelay {
   }
 
   log(...args) {
+    // Console log in server
     console.log(`[RealtimeRelay]`, ...args);
+    
+    // If we have an active WebSocket, send the log to the client
+    if (this.wss) {
+      this.wss.clients.forEach((client) => {
+        if (client.readyState === client.OPEN) {
+          client.send(JSON.stringify({
+            type: 'server.log',
+            data: {
+              timestamp: new Date().toISOString(),
+              message: args.join(' ')
+            }
+          }));
+        }
+      });
+    }
   }
 }
